@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Locatie Leren</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<style>
+:root{--bg:#f3f8ff;--ink:#1f2d4d;--blue:#3b6fe0;--teal:#18a999;--card:#fff;--line:#d6e2f5;--red:#e03b3b}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Trebuchet MS",system-ui,sans-serif;background:var(--bg);color:var(--ink);font-size:18px}
+h1{margin:0 0 6px;font-size:2rem}
+.screen{display:none;max-width:1200px;margin:0 auto;padding:16px}
+.screen.on{display:block}
+.card{background:var(--card);border:2px solid var(--line);border-radius:18px;padding:20px;box-shadow:0 4px 14px #3b6fe014}
+label{display:block;font-weight:bold;margin:14px 0 6px}
+textarea,input,select{width:100%;font:inherit;padding:10px;border:2px solid var(--line);border-radius:10px;background:#fff;color:var(--ink)}
+textarea{min-height:170px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+button{font:inherit;font-weight:bold;border:0;border-radius:14px;padding:14px 22px;background:var(--blue);color:#fff;cursor:pointer;min-height:52px}
+button.alt{background:var(--teal)} button.ghost{background:#e6eefc;color:var(--ink)}
+button:disabled{opacity:.45;cursor:not-allowed}
+.btns{display:flex;gap:12px;flex-wrap:wrap;margin-top:18px}
+.small{font-size:.85rem;color:#51608a}
+.err{color:var(--red);font-weight:bold}
+#review{margin-top:14px}
+.rv{display:grid;grid-template-columns:1fr 2fr;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)}
+.game{display:grid;grid-template-columns:1fr 360px;gap:16px}
+#mapwrap{position:relative}
+#map{height:72vh;min-height:380px;border-radius:18px;border:2px solid var(--line)}
+#reset{position:absolute;z-index:1000;right:12px;top:12px;padding:8px 14px;min-height:44px;background:#fff;color:var(--ink);border:2px solid #0003}
+#banner{position:absolute;z-index:1000;left:12px;right:70px;bottom:12px;background:#fff3cd;border-radius:10px;padding:8px 12px;display:none;font-size:.9rem}
+.top{display:flex;justify-content:space-between;font-weight:bold;margin-bottom:8px}
+.bar{height:14px;background:#dfe9fb;border-radius:9px;overflow:hidden;margin-bottom:18px}
+.bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--teal),var(--blue));transition:width .3s}
+#q{font-size:1.6rem;font-weight:bold;margin:6px 0 14px}
+.ans{display:block;width:100%;margin:0 0 10px;font-size:1.15rem;background:#fff;color:var(--ink);border:3px solid var(--line)}
+.ans:hover{border-color:var(--blue);background:#eef3ff}
+.leaflet-control-zoom a{width:44px!important;height:44px!important;line-height:44px!important;font-size:22px!important}
+@media(max-width:860px){.game{grid-template-columns:1fr}#map{height:55vh}}
+.big{font-size:3rem;font-weight:bold;color:var(--blue)}
+</style>
+</head>
+<body>
+
+<!-- ============ SETUP ============ -->
+<div id="setup" class="screen on">
+ <div class="card">
+  <h1>🗺️ Locatie Leren – Instellingen voor ouders</h1>
+  <p class="small">Voer de plaatsen in die je kind moet leren. De locaties worden online opgezocht (OpenStreetMap Nominatim).</p>
+  <label for="country">Land (optioneel – voorkomt verwarring met plaatsen met dezelfde naam in een ander land)</label><input id="country" placeholder="bijv. Nederland">
+  <label for="places">Plaatsnamen (één per regel)</label>
+  <textarea id="places" placeholder="Sneek&#10;Leeuwarden&#10;Groningen&#10;Zwolle&#10;Enschede"></textarea>
+  <div class="row">
+   <div><label for="nq">Aantal vragen</label><input id="nq" type="number" min="1" max="100" value="10"></div>
+   <div><label for="no">Antwoordopties per vraag</label><input id="no" type="number" min="2" max="12" value="4"></div>
+  </div>
+  <label for="btype">Vraagsoort bij “Welke plaats is gemarkeerd met de rode stip?”</label>
+  <select id="btype"><option value="mc">Meerkeuze</option><option value="typed">Typen (zonder opties, met spelling)</option><option value="mix">Afwisselend</option></select>
+  <label style="display:flex;gap:12px;align-items:center;margin-top:18px"><input type="checkbox" id="reveal" style="width:auto;transform:scale(1.5);margin:0 6px" checked> Toon het juiste antwoord direct na een fout antwoord</label>
+  <p class="small">Uitgeschakeld: het juiste antwoord wordt pas getoond in de oefenronde na de test.</p>
+  <div class="row">
+   <div><label for="prov">Kaartaanbieder</label><select id="prov"></select></div>
+   <div id="keybox"><label for="key">API-sleutel</label><input id="key" placeholder="Plak je sleutel (blijft alleen in deze browser)"></div>
+  </div>
+  <p class="small" id="provnote"></p>
+  <div class="btns"><button id="check" class="ghost">1. Plaatsen controleren</button><button id="study" class="ghost" disabled>📖 Eerst leren</button><button id="start" class="alt" disabled>2. Spel starten</button></div>
+  <div id="msg" class="err"></div>
+  <p class="small" style="text-align:right;margin:10px 0 0">versie 1.0</p>
+  <div id="review"></div>
+ </div>
+</div>
+
+<!-- ============ GAME ============ -->
+<div id="game" class="screen">
+ <div class="game">
+  <div id="mapwrap"><div id="map"></div><button id="reset">⟲ Kaart herstellen</button><div id="banner"></div></div>
+  <div class="card">
+   <div class="top"><span id="count"></span><span>Locatie Leren</span></div>
+   <div class="bar"><i id="prog"></i></div>
+   <div id="q"></div>
+   <div id="answers"></div>
+  </div>
+ </div>
+</div>
+
+<!-- ============ RESULT ============ -->
+<div id="result" class="screen">
+ <div class="card" style="text-align:center">
+  <div class="big" id="pct"></div>
+  <h1 id="rmsg"></h1>
+  <p id="rtxt"></p>
+  <div class="btns" style="justify-content:center">
+   <button id="repeat" style="display:none">Herhaal de foute antwoorden</button><button id="again" class="alt">Opnieuw spelen</button><button id="back" class="ghost">Terug naar instellingen</button>
+  </div>
+ </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script>
+/* =====================================================================
+   MAP PROVIDERS (no-key Esri tiles by default) – to change provider, edit/add an entry here.
+   {key} in the URL is replaced by the API key typed in the setup screen
+   (keys are never stored in this file). No provider = no silent fallback.
+   Label-free styles are used so the map does not give away the answers.
+   ===================================================================== */
+const PROVIDERS = {
+  esrigray:{name:"Esri Lichtgrijs (zonder namen) – geen sleutel nodig",needsKey:false,maxZoom:16,
+    url:"https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+    attr:'Tiles © Esri',
+    note:"Geen account of sleutel nodig. Rustige grijze kaart met kustlijnen, rivieren en grenzen, zonder plaatsnamen."},
+  esriterrain:{name:"Esri Terrein (zonder namen) – geen sleutel nodig",needsKey:false,maxZoom:13,
+    url:"https://server.arcgisonline.com/ArcGIS/rest/services/World_Terrain_Base/MapServer/tile/{z}/{y}/{x}",
+    attr:'Tiles © Esri',
+    note:"Geen account of sleutel nodig. Reliëfkaart met water en land, zonder plaatsnamen."},
+  maptiler:{name:"MapTiler Backdrop – gratis API-sleutel",needsKey:true,maxZoom:18,
+    url:"https://api.maptiler.com/maps/backdrop/{z}/{x}/{y}.png?key={key}",
+    attr:'© MapTiler © OpenStreetMap contributors',
+    note:"Maak een gratis account op maptiler.com → Account → API keys → kopieer de sleutel hierheen."}
+};
+
+const $ = s => document.querySelector(s);
+const shuffle = a => { a=[...a]; for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]];} return a; };
+const store = { get(k,d){try{return localStorage.getItem(k)??d}catch(e){return d}}, set(k,v){try{localStorage.setItem(k,v)}catch(e){}} };
+function show(id){ document.querySelectorAll(".screen").forEach(s=>s.classList.toggle("on",s.id===id)); }
+
+/* ---------- Setup ---------- */
+const provSel=$("#prov");
+for(const k in PROVIDERS) provSel.add(new Option(PROVIDERS[k].name,k));
+$("#places").value=store.get("me_places","");
+$("#country").value=store.get("me_country",""); $("#reveal").checked=store.get("me_reveal","1")==="1"; $("#btype").value=store.get("me_btype","mc"); $("#btype").onchange=()=>store.set("me_btype",$("#btype").value); $("#reveal").onchange=()=>store.set("me_reveal",$("#reveal").checked?"1":"0"); $("#nq").value=store.get("me_nq","10"); $("#no").value=store.get("me_no","4");
+provSel.value=store.get("me_prov","esrigray"); if(!PROVIDERS[provSel.value]) provSel.value="esrigray"; $("#key").value=store.get("me_key_"+provSel.value,"");
+function provUI(){ const p=PROVIDERS[provSel.value]; $("#keybox").style.visibility=p.needsKey?"visible":"hidden"; $("#provnote").textContent=p.note; $("#key").value=store.get("me_key_"+provSel.value,""); }
+provSel.onchange=provUI; provUI();
+
+let places=[];            // [{name, cands:[{lat,lon,label}], sel}]
+const geoCache={};
+const wait = ms => new Promise(r=>setTimeout(r,ms));
+
+async function geocode(q){
+  if(geoCache[q]) return geoCache[q];
+  const r=await fetch("https://nominatim.openstreetmap.org/search?format=json&limit=5&accept-language=nl&q="+encodeURIComponent(q));
+  if(!r.ok) throw new Error("Fout van geocoder "+r.status);
+  const j=await r.json();
+  return geoCache[q]=j.map(x=>({lat:+x.lat,lon:+x.lon,label:x.display_name}));
+}
+
+$("#check").onclick=async()=>{
+  const names=[...new Set($("#places").value.split("\n").map(s=>s.trim()).filter(Boolean))];
+  const nq=+$("#nq").value, no=+$("#no").value, msg=$("#msg"), rv=$("#review");
+  msg.textContent=""; rv.innerHTML=""; $("#start").disabled=true; $("#study").disabled=true;
+  if(names.length<2) return msg.textContent="Voer minstens 2 plaatsnamen in.";
+  if(!(nq>=1)) return msg.textContent="Het aantal vragen moet minstens 1 zijn.";
+  if(!(no>=2)||no>names.length) return msg.textContent=`Het aantal antwoordopties moet tussen 2 en ${names.length} liggen (het aantal ingevoerde plaatsen).`;
+  if(PROVIDERS[provSel.value].needsKey && !$("#key").value.trim()) return msg.textContent="Deze kaartaanbieder heeft een API-sleutel nodig (zie de opmerking hierboven).";
+  store.set("me_places",$("#places").value); store.set("me_country",$("#country").value.trim()); store.set("me_nq",nq); store.set("me_no",no);
+  store.set("me_prov",provSel.value); store.set("me_key_"+provSel.value,$("#key").value.trim());
+  $("#check").disabled=true; places=[]; const bad=[];
+  for(let i=0;i<names.length;i++){
+    msg.textContent=`Plaatsen opzoeken… ${i+1}/${names.length}`; msg.className="small";
+    try{
+      const country=$("#country").value.trim();
+      const q=(country&&!names[i].toLowerCase().includes(country.toLowerCase()))?names[i]+", "+country:names[i];
+      const fresh=!geoCache[q];
+      const c=await geocode(q);
+      if(!c.length) bad.push(names[i]); else places.push({name:names[i],cands:c,sel:0});
+      if(fresh) await wait(1100); // Nominatim policy: max 1 request/second
+    }catch(e){ bad.push(names[i]+" (opzoeken mislukt – controleer je internetverbinding)"); }
+  }
+  $("#check").disabled=false; msg.className="err";
+  if(bad.length){ msg.innerHTML="Corrigeer deze plaatsen (controleer de spelling of het landveld):<br>• "+bad.join("<br>• "); return; }
+  msg.textContent="";
+  rv.innerHTML='<p class="small">✅ Alle plaatsen gevonden. Komt een naam met meerdere locaties overeen, kies dan de juiste:</p>';
+  places.forEach((p,i)=>{
+    const d=document.createElement("div"); d.className="rv"; d.innerHTML=`<b></b>`; d.firstChild.textContent=p.name;
+    const s=document.createElement("select");
+    p.cands.forEach((c,k)=>s.add(new Option(c.label,k))); s.onchange=()=>p.sel=+s.value; d.appendChild(s); rv.appendChild(d);
+  });
+  $("#start").disabled=false; $("#study").disabled=false;
+};
+$("#start").onclick=()=>startGame(); $("#study").onclick=()=>startStudy();
+$("#back").onclick=()=>show("setup");
+$("#again").onclick=()=>startGame();
+
+/* ---------- Map ---------- */
+let map,tiles,layer,view,tileErrors=0;
+function initMap(){
+  const p=PROVIDERS[provSel.value];
+  if(!map){
+    map=L.map("map",{zoomControl:false,scrollWheelZoom:true,touchZoom:true,dragging:true,minZoom:2,worldCopyJump:true});
+    layer=L.layerGroup().addTo(map); L.control.zoom({zoomInTitle:"Inzoomen",zoomOutTitle:"Uitzoomen"}).addTo(map);
+    $("#reset").onclick=()=>applyView();
+  }
+  if(tiles) map.removeLayer(tiles);
+  tileErrors=0; $("#banner").style.display="none";
+  tiles=L.tileLayer(p.url,{attribution:p.attr,key:$("#key").value.trim(),maxZoom:p.maxZoom,maxNativeZoom:p.maxZoom}).addTo(map);
+  tiles.on("tileerror",()=>{ if(++tileErrors===4){ const b=$("#banner"); b.style.display="block";
+    b.textContent="De kaart wordt niet geladen. Controleer je internetverbinding en, als de aanbieder er een nodig heeft, de API-sleutel op het instellingenscherm."; }});
+}
+function applyView(){ if(!view) return;
+  if(view.bounds) map.fitBounds(view.bounds,{padding:[45,45],maxZoom:12}); else map.setView(view.center,view.zoom); }
+
+/* ---------- Game ---------- */
+let Q=[],qi=0,score=0,locked=false,cfg={},mode="test",missed=[],pts=0,spellOk=0,still=[],curMarkers=[],curRed=null;
+function startGame(){
+  cfg={nq:+$("#nq").value,no:+$("#no").value,showAnswer:$("#reveal").checked,btype:$("#btype").value};
+  let pool=[]; while(pool.length<cfg.nq) pool=pool.concat(shuffle(places));
+  const first=Math.random()<.5?0:1;
+  Q=pool.slice(0,cfg.nq).map((t,i)=>{
+    const others=shuffle(places.filter(p=>p!==t)).slice(0,cfg.no-1);
+    return {type:(first+i)%2?(cfg.btype==="typed"?"T":(cfg.btype==="mix"&&Math.random()<.5?"T":"B")):"A",target:t,options:shuffle([t,...others])};
+  });
+  qi=0; score=0; pts=0; spellOk=0; mode="test"; missed=[]; show("game"); initMap(); map.invalidateSize(); showQ();
+}
+const pos=p=>[p.cands[p.sel].lat,p.cands[p.sel].lon];
+
+function showQ(){
+  locked=false; const q=Q[qi];
+  $("#count").textContent=`${mode==="practice"?"Oefenen":"Vraag"} ${qi+1}/${Q.length}`; $("#prog").style.width=(qi/Q.length*100)+"%";
+  layer.clearLayers(); curMarkers=[]; curRed=null; const ans=$("#answers"); ans.innerHTML="";
+  if(q.type==="A"){
+    $("#q").textContent=`Waar ligt ${q.target.name}?`;
+    ans.innerHTML='<p class="small">Tik op de stip waar je denkt dat het ligt.</p>';
+    const pts=q.options.map(pos);
+    q.options.forEach(p=>{
+      const m=L.circleMarker(pos(p),{radius:13,color:"#fff",weight:3,fillColor:"#3b6fe0",fillOpacity:1}).addTo(layer);
+      m.on("click",()=>answer(p===q.target,m)); curMarkers.push({m,p});
+    });
+    view={bounds:L.latLngBounds(pts)};
+    if(pts.length>1 && view.bounds.getSouthWest().equals(view.bounds.getNorthEast())) view={center:pts[0],zoom:10};
+  }else{
+    $("#q").textContent="Welke plaats is gemarkeerd met de rode stip?";
+    const t=pos(q.target);
+    curRed=L.circleMarker(t,{radius:14,color:"#fff",weight:3,fillColor:"#e03b3b",fillOpacity:1}).addTo(layer);
+    if(q.type==="T") typedUI(ans); else q.options.forEach(p=>{
+      const b=document.createElement("button"); b.className="ans"; b.textContent=p.name;
+      b.dataset.ok=p===q.target?"1":"0"; b.onclick=()=>answer(p===q.target,b); ans.appendChild(b);
+    });
+    view={center:t,zoom:9};
+  }
+  applyView();
+}
+function answer(ok,chosen,exact){
+  if(locked) return; locked=true;
+  const q=Q[qi], full=q.type==="T"?(ok&&exact):ok;
+  if(mode==="test"){
+    if(ok){ score++; pts++; if(q.type==="T"&&exact){ pts++; spellOk++; } }
+    if(!full) missed.push(q);
+  }else if(!full) still.push(q);
+  feedback(ok,chosen,exact);
+}
+function next(){
+  qi++;
+  if(qi>=Q.length) (mode==="practice"?finishPractice:finish)(); else showQ();
+}
+/* ---------- Typed answers: forgiving spelling match ---------- */
+const norm=t=>t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]/g,"");
+function lev(a,b){ const d=[...Array(b.length+1).keys()];
+  for(let i=1;i<=a.length;i++){ let prev=d[0]; d[0]=i;
+    for(let j=1;j<=b.length;j++){ const t=d[j]; d[j]=Math.min(d[j]+1,d[j-1]+1,prev+(a[i-1]===b[j-1]?0:1)); prev=t; } }
+  return d[b.length]; }
+function matchName(txt){ // closest place in the whole list; d===0 means spelled exactly (ignoring case/accents/punctuation)
+  const x=norm(txt), r=places.map(p=>{ const n=norm(p.name.split(",")[0]); return {p,d:lev(x,n),max:Math.max(1,Math.floor(n.length/4))}; }).sort((a,b)=>a.d-b.d);
+  return (r[0].d<=r[0].max&&(!r[1]||r[1].d>r[0].d))?{p:r[0].p,d:r[0].d}:{p:null,d:99};
+}
+function typedUI(box){
+  const i=document.createElement("input"); i.id="typed"; i.placeholder="Typ de naam…"; i.style.cssText="font-size:1.3rem;margin-bottom:10px";
+  ["autocomplete","autocorrect","autocapitalize"].forEach(a=>i.setAttribute(a,"off")); i.spellcheck=false;
+  const b=document.createElement("button"); b.id="sendtyped"; b.textContent="Antwoorden"; b.style.width="100%";
+  const go=()=>{ if(!i.value.trim()) return; const r=matchName(i.value); answer(r.p===Q[qi].target,null,r.d===0); };
+  b.onclick=go; i.onkeydown=e=>{ if(e.key==="Enter") go(); };
+  box.append(i,b); setTimeout(()=>i.focus({preventScroll:true}),50);
+}
+/* ---------- Study mode ---------- */
+function startStudy(){
+  mode="study"; show("game"); initMap(); map.invalidateSize(); layer.clearLayers();
+  $("#count").textContent="Leren"; $("#prog").style.width="100%";
+  $("#q").textContent="Tik op een stip om de naam te zien.";
+  const box=$("#answers"); box.innerHTML="";
+  places.forEach(p=>{
+    const m=L.circleMarker(pos(p),{radius:12,color:"#fff",weight:3,fillColor:"#3b6fe0",fillOpacity:1}).addTo(layer);
+    m.bindTooltip(p.name,{direction:"top",offset:[0,-10]});
+    m.on("click",()=>{ layer.eachLayer(l=>l.closeTooltip()); m.openTooltip(); });
+  });
+  const go=document.createElement("button"); go.className="alt"; go.style.cssText="width:100%;margin-bottom:10px"; go.textContent="Start de quiz →"; go.onclick=startGame;
+  const bk=document.createElement("button"); bk.className="ghost"; bk.style.width="100%"; bk.textContent="Terug naar instellingen"; bk.onclick=()=>show("setup");
+  box.append(go,bk);
+  view={bounds:L.latLngBounds(places.map(pos))}; applyView();
+}
+/* ---------- Practice round (only after the test): shows the correct answer ---------- */
+function startPractice(list){
+  mode="practice"; Q=shuffle(list); qi=0; still=[];
+  show("game"); map.invalidateSize(); showQ();
+}
+function feedback(ok,chosen,exact){
+  /* Correct: green + name on the map. Wrong: red + "Niet juist".
+     The correct answer is only revealed after a wrong answer in the practice round. */
+  const q=Q[qi], tip={permanent:true,direction:"top",offset:[0,-10]};
+  const reveal=ok||mode==="practice"||cfg.showAnswer;
+  const ti=$("#typed"); if(ti){ ti.disabled=true; $("#sendtyped").style.display="none"; }
+  if(q.type==="A"){
+    curMarkers.forEach(({m,p})=>{
+      if(p===q.target&&reveal){ m.setStyle({fillColor:"#18a999"}); m.setRadius(16); m.bindTooltip(q.target.name,tip).openTooltip(); }
+      else if(m===chosen) m.setStyle({fillColor:"#e03b3b"});
+    });
+  }else{
+    if(reveal) curRed.bindTooltip(q.target.name,tip).openTooltip();
+    document.querySelectorAll(".ans").forEach(b=>{
+      b.disabled=true; b.style.opacity=1;
+      if(reveal&&b.dataset.ok==="1") b.style.background="#c9f2ea"; else if(b===chosen) b.style.background="#fbd0d0";
+    });
+  }
+  const p=document.createElement("p"); p.style.fontWeight="bold";
+  p.textContent=ok?(q.type==="T"&&!exact?`Bijna! Het is ${q.target.name} – let op de spelling. ✅`:"Goed zo! ✅"):(reveal?`Niet juist. Het juiste antwoord is ${q.target.name}.`:"Niet juist. ❌");
+  const n=document.createElement("button"); n.className="alt"; n.onclick=next;
+  n.textContent=qi===Q.length-1?"Bekijk de score →":"Volgende →";
+  const box=$("#answers"); box.appendChild(p); box.appendChild(n);
+}
+function finish(){
+  const n=Q.length, nt=Q.filter(q=>q.type==="T").length, max=n+nt, pct=Math.round(pts/max*100);
+  const m=pct===100?"Perfect! 🌟":pct>=80?"Goed gedaan! 🎉":pct>=60?"Goed bezig! 👍":pct>=40?"Mooi geprobeerd – blijf ontdekken! 🧭":"Goed begin – laten we nog meer oefenen! 🚀";
+  $("#pct").textContent=pct+"%"; $("#rmsg").textContent=m;
+  $("#rtxt").innerHTML=nt?`Je hebt ${pts} van de ${max} punten.<br>Plaats goed: ${score} van de ${n} vragen &nbsp;•&nbsp; Spelling goed: ${spellOk} van de ${nt} getypte vragen`:`Je hebt ${score} van de ${n} vragen goed beantwoord.<br>Goed: ${score} &nbsp;•&nbsp; Fout: ${n-score}`;
+  const r=$("#repeat"); r.style.display=missed.length?"":"none"; r.onclick=()=>startPractice(missed);
+  show("result");
+}
+function finishPractice(){
+  const n=Q.length, good=n-still.length, list=[...still], r=$("#repeat");
+  $("#pct").textContent=`${good}/${n}`;
+  $("#rmsg").textContent=list.length?"Goed geoefend! 💪":"Alles goed! 🌟";
+  $("#rtxt").textContent=list.length?`Nog ${list.length} om te onthouden. Oefen ze nog een keer!`:"Je kent nu alle plaatsen die je eerst fout had.";
+  r.style.display=list.length?"":"none"; r.onclick=()=>startPractice(list);
+  show("result");
+}
+</script>
+</body>
+</html>
